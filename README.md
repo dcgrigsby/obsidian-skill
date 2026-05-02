@@ -7,6 +7,31 @@ Obsidian Sync. It does **not** know personal organizational conventions
 (folder layout, daily-log format, naming) — those belong in a separate
 workflow skill.
 
+## ⛔ DANGER — READ BEFORE USE
+
+> **By installing or using this skill, you give an AI agent full read/write
+> access to your Obsidian vault. Deletes can be irreversible. Read
+> [NOTICE](NOTICE) before proceeding.**
+
+Specifically:
+
+- The skill writes directly to your vault filesystem with no sandboxing
+  and no per-call confirmation. Destructive-action guardrails are skill
+  instructions, not enforced mechanisms.
+- The `rename` operation modifies many files in a single pass to keep
+  links intact. A misinterpreted or hallucinated rename can mass-rewrite
+  the wrong references across the vault.
+- An agent following a prompt-injection payload — embedded in note
+  contents, meeting transcripts, or pasted material — can be directed
+  to overwrite or delete unrelated notes.
+- Recovery depends on Obsidian Sync version history (if enabled) or
+  whatever else you have running (Time Machine, git). The skill keeps
+  no backups of its own.
+- **Back up your Obsidian vault before use.**
+
+The authors accept no liability. See [LICENSE](LICENSE) and [NOTICE](NOTICE)
+for full terms.
+
 ## Companion skills
 
 This skill is one of three:
@@ -57,3 +82,7 @@ without restructuring the skill. Worth doing once we have evidence that
 smaller models are over-reading the body or under-using the script.
 
 Don't optimize this preemptively. Ship and observe failure modes first.
+
+## License
+
+Apache 2.0 — see [LICENSE](LICENSE).

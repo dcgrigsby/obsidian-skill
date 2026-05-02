@@ -1,0 +1,48 @@
+obsidian-skill
+Copyright 2026 Dan Grigsby
+
+CRITICAL SAFETY WARNING — PLEASE READ BEFORE USE
+
+This skill gives an AI agent (Claude or any skill-aware assistant) the
+ability to read, write, rename, and delete files in your Obsidian vault
+on macOS. Operations run directly against the vault filesystem with full
+read/write privileges. There is NO sandboxing and NO per-call
+confirmation — the only safeguards are instructions in the skill telling
+the agent to surface destructive changes before performing them, which
+is enforcement by convention, not by mechanism.
+
+Potential consequences of misuse include but are not limited to:
+- Permanent deletion of notes (after trash-empty or hard delete)
+- Overwriting note contents via the replace operation
+- Mass-rewriting of links across many files via the rename operation
+- Silent or bulk modification of frontmatter, sections, or attachments
+- Corruption of structured notes if heading/anchor matching goes wrong
+- Loss of in-progress writing not yet captured by Obsidian Sync history
+
+Risks specific to AI-driven use:
+- An agent may misinterpret a request and run a destructive query
+- A prompt-injection payload reaching the agent (via note contents,
+  meeting transcripts, pasted material, or external context) could
+  direct it to overwrite, rename, or delete unrelated notes
+- A hallucinated path or heading anchor may produce unintended writes
+- A buggy regex in a future skill update could mass-rewrite links
+  incorrectly across the vault
+
+Recovery expectations:
+- If Obsidian Sync is enabled, per-file version history is the primary
+  recovery backstop — but retention is finite, and silent drift may go
+  unnoticed past the retention window.
+- Without Sync, recovery depends entirely on whatever else is running
+  (Time Machine, iCloud Drive history, git, Dropbox versions). The
+  skill itself maintains no backups.
+
+By using this software, you acknowledge that:
+1. You understand the risks described above
+2. You accept full responsibility for any data loss or damage
+3. You will back up your Obsidian vault before granting an agent
+   access through this skill
+4. The authors and contributors provide NO WARRANTY of any kind
+5. The authors and contributors accept NO LIABILITY for any damages
+
+This notice must be preserved in all copies or substantial portions
+of the software, per the Apache License, Version 2.0.
