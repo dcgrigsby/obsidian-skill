@@ -1,0 +1,26 @@
+{
+  "skill_name": "obsidian",
+  "evals": [
+    {
+      "id": 1,
+      "name": "cold-start-vault-discovery",
+      "prompt": "I'm starting to use my Obsidian vault with you. The vault is at /tmp/obsidian-test-vaults/eval-1-CONFIG/ — register it and then create a note called 'Welcome' at the vault root with the body 'Hello from the skill test on 2026-05-02.' Tell me where you stored info about the vault for next time.",
+      "expected_output": "Vault validated (.obsidian/ check), Welcome.md created at vault root with the requested body, persistence location surfaced to user.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "reverse-chrono-daily-log-append",
+      "prompt": "Add an entry to today's daily log: 'spoke with Sarah at 14:00 about Q3 staffing'. The log lives at /tmp/obsidian-test-vaults/eval-2-CONFIG/Daily/2026-05-02.md and the Log section is reverse-chronological — newest entries go right under the heading.",
+      "expected_output": "New entry inserted directly after the '## Log' heading, before existing entries. Frontmatter and Tasks section unchanged.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "rename-with-link-updates",
+      "prompt": "Rename my People/Sarah note to People/Sarah Chen, and update every link in the vault that points to it. Vault is at /tmp/obsidian-test-vaults/eval-3-CONFIG/. Show me what links you'd update before doing anything destructive.",
+      "expected_output": "Preview of references first (~7 across 2 files: Notes.md and Meetings.md, with multiple link forms). After confirmation: file renamed, all link forms updated correctly (basic wikilink, alias, heading anchor, embed, markdown form).",
+      "files": []
+    }
+  ]
+}

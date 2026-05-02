@@ -1,0 +1,22 @@
+[
+  {"query": "stash this paragraph somewhere I'll find it later, the meeting notes from this morning's leadership sync about the Q3 roadmap shift", "should_trigger": true},
+  {"query": "save 'spoke with Sarah at 14:00 about Q3 staffing' to today's daily log under the Log section, that's where the reverse-chrono entries go", "should_trigger": true},
+  {"query": "I want to rename my People/Sarah note to People/Sarah Chen and update every link in the vault that points to it", "should_trigger": true},
+  {"query": "find every note that mentions [[Project Phoenix]] or links to it — I want to see the full set of context", "should_trigger": true},
+  {"query": "create a new reference page for the postgres connection pooling stuff I keep googling, put it under Reference/postgres-pooling.md", "should_trigger": true},
+  {"query": "open the daily log in obsidian so i can read it on my phone in a sec", "should_trigger": true},
+  {"query": "what's in the meeting transcripts folder from last week, I think there were 3 or 4 calls", "should_trigger": true},
+  {"query": "I jotted down some thoughts in my vault about migration risk, can you grep for 'migration risk' and pull up the surrounding paragraphs", "should_trigger": true},
+  {"query": "stash this snippet of writing for later, I'm not sure where it'll end up but I want it captured before I forget", "should_trigger": true},
+  {"query": "I just typed up a 5-paragraph draft on the platform team reorg — file it under journal entries somewhere", "should_trigger": true},
+  {"query": "remind me to renew my passport before the trip in october", "should_trigger": false},
+  {"query": "what's overdue in my task list — I have 30 minutes before the next meeting", "should_trigger": false},
+  {"query": "did I ever follow up with Sarah on her Q2 proposal? not sure if I logged that", "should_trigger": false},
+  {"query": "review the diff in this PR and tell me if the migration is safe to merge", "should_trigger": false},
+  {"query": "I'm thinking about how to structure my notes — what folder layout do you suggest for a tech lead's PKM", "should_trigger": false},
+  {"query": "search the codebase for all callers of the deprecated parseQuery() function", "should_trigger": false},
+  {"query": "summarize this PDF document I just dropped in /tmp", "should_trigger": false},
+  {"query": "write a quick fibonacci function in python", "should_trigger": false},
+  {"query": "what notes do I have on prompt caching, also where do prompt-caching gotchas show up — those usually live in my work journal but might be in claude-api notes", "should_trigger": true},
+  {"query": "set up a recurring weekly review for me, I want to do it every Sunday evening", "should_trigger": false}
+]
