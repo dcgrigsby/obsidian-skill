@@ -29,13 +29,20 @@ FAIL = 0
 FAILURES: list[str] = []
 
 
-def run(*args: str) -> tuple[int, str, str]:
+def run(*args: str, env: dict | None = None) -> tuple[int, str, str]:
+    full_env = {**os.environ, **(env or {})}
     p = subprocess.run(
         [sys.executable, str(SCRIPT), *args],
         capture_output=True,
         text=True,
+        env=full_env,
     )
     return p.returncode, p.stdout, p.stderr
+
+
+def make_config_env(tmpdir: Path) -> dict:
+    """Point the script at a temp config file via OBSIDIAN_SKILL_CONFIG."""
+    return {"OBSIDIAN_SKILL_CONFIG": str(tmpdir / "config.json")}
 
 
 def make_vault() -> Path:
@@ -65,7 +72,7 @@ def test_insert_at_end():
     try:
         f = v / "note.md"
         f.write_text("hello\n")
-        rc, out, err = run("insert", "--vault", str(v), "--file", "note.md",
+        rc, out, err = run("insert", "--vault-path", str(v), "--file", "note.md",
                            "--anchor", "end", "--content", "appended")
         case("returns 0", rc == 0, err)
         text = f.read_text()
@@ -82,7 +89,7 @@ def test_insert_at_end_no_trailing_newline():
     try:
         f = v / "note.md"
         f.write_text("hello")  # no trailing newline
-        rc, _, err = run("insert", "--vault", str(v), "--file", "note.md",
+        rc, _, err = run("insert", "--vault-path", str(v), "--file", "note.md",
                           "--anchor", "end", "--content", "x")
         case("returns 0", rc == 0, err)
         text = f.read_text()
@@ -98,7 +105,7 @@ def test_insert_after_heading():
     try:
         f = v / "log.md"
         f.write_text("## Log\n\n- old\n\n## Tasks\n\n- t1\n")
-        rc, _, err = run("insert", "--vault", str(v), "--file", "log.md",
+        rc, _, err = run("insert", "--vault-path", str(v), "--file", "log.md",
                           "--anchor", "after-heading:Log", "--content", "- new")
         case("returns 0", rc == 0, err)
         text = f.read_text()
@@ -118,7 +125,7 @@ def test_insert_before_heading():
     try:
         f = v / "log.md"
         f.write_text("## Log\n\n- old\n\n## Tasks\n\n- t1\n")
-        rc, _, err = run("insert", "--vault", str(v), "--file", "log.md",
+        rc, _, err = run("insert", "--vault-path", str(v), "--file", "log.md",
                           "--anchor", "before-heading:Tasks", "--content", "- end-of-log")
         case("returns 0", rc == 0, err)
         text = f.read_text()
@@ -145,7 +152,7 @@ def test_insert_heading_in_code_fence_skipped():
             "\n"
             "- existing\n"
         )
-        rc, out, err = run("insert", "--vault", str(v), "--file", "note.md",
+        rc, out, err = run("insert", "--vault-path", str(v), "--file", "note.md",
                           "--anchor", "after-heading:Log", "--content", "- new")
         # The code fence contains a fake "## Log". The script should match the
         # real one only — so this should succeed (one match, not "multiple").
@@ -163,7 +170,7 @@ def test_insert_no_match():
     try:
         f = v / "note.md"
         f.write_text("just text\n")
-        rc, _, err = run("insert", "--vault", str(v), "--file", "note.md",
+        rc, _, err = run("insert", "--vault-path", str(v), "--file", "note.md",
                           "--anchor", "after-heading:Nope", "--content", "x")
         case("returns nonzero", rc != 0)
         case("error mentions no matching heading", "no heading matching" in err.lower())
@@ -177,7 +184,7 @@ def test_insert_multiple_matches():
     try:
         f = v / "note.md"
         f.write_text("## Log\nfoo\n\n## Log\nbar\n")
-        rc, _, err = run("insert", "--vault", str(v), "--file", "note.md",
+        rc, _, err = run("insert", "--vault-path", str(v), "--file", "note.md",
                           "--anchor", "after-heading:Log", "--content", "x")
         case("returns nonzero", rc != 0)
         case("error mentions multiple matches", "multiple" in err.lower())
@@ -189,7 +196,7 @@ def test_insert_nonexistent_file():
     print("\n[insert] nonexistent file errors")
     v = make_vault()
     try:
-        rc, _, err = run("insert", "--vault", str(v), "--file", "missing.md",
+        rc, _, err = run("insert", "--vault-path", str(v), "--file", "missing.md",
                           "--anchor", "end", "--content", "x")
         case("returns nonzero", rc != 0)
         case("error mentions create not insert", "does not exist" in err.lower())
@@ -203,7 +210,7 @@ def test_insert_preserves_frontmatter():
     try:
         f = v / "note.md"
         f.write_text("---\ntitle: hi\n---\n\n## Log\n\n- old\n")
-        rc, _, err = run("insert", "--vault", str(v), "--file", "note.md",
+        rc, _, err = run("insert", "--vault-path", str(v), "--file", "note.md",
                           "--anchor", "after-heading:Log", "--content", "- new")
         case("returns 0", rc == 0, err)
         text = f.read_text()
@@ -223,7 +230,7 @@ def test_insert_path_containment():
         try:
             # Use a relative path that escapes the vault
             relative_to_outside = os.path.relpath(outside_file, v)
-            rc, _, err = run("insert", "--vault", str(v),
+            rc, _, err = run("insert", "--vault-path", str(v),
                               "--file", relative_to_outside,
                               "--anchor", "end", "--content", "x")
             case("refuses path outside vault", rc != 0)
@@ -251,7 +258,7 @@ def test_backlinks_bare_name():
             "![[Sarah]]\n"
             "[md](People/Sarah.md)\n"
         )
-        rc, out, err = run("backlinks", "--vault", str(v), "Sarah")
+        rc, out, err = run("backlinks", "--vault-path", str(v), "Sarah")
         case("returns 0", rc == 0, err)
         data = json.loads(out)
         case("found 5 link forms", data["count"] == 5,
@@ -268,7 +275,7 @@ def test_backlinks_ambiguous():
         (v / "Refs").mkdir()
         (v / "People" / "Sarah.md").write_text("p\n")
         (v / "Refs" / "Sarah.md").write_text("r\n")
-        rc, out, err = run("backlinks", "--vault", str(v), "Sarah")
+        rc, out, err = run("backlinks", "--vault-path", str(v), "Sarah")
         case("returns nonzero exit code", rc == 2)
         data = json.loads(out)
         case("error mentions ambiguity", data.get("error") == "ambiguous note name")
@@ -287,7 +294,7 @@ def test_backlinks_excludes_obsidian_dir():
         (v / ".trash").mkdir()
         (v / ".trash" / "old.md").write_text("[[Sarah]] also ignored\n")
         (v / "Notes.md").write_text("[[Sarah]] real link\n")
-        rc, out, _ = run("backlinks", "--vault", str(v), "Sarah")
+        rc, out, _ = run("backlinks", "--vault-path", str(v), "Sarah")
         case("returns 0", rc == 0)
         data = json.loads(out)
         case("only real link found, not the .obsidian or .trash ones", data["count"] == 1)
@@ -321,7 +328,7 @@ def test_rename_preview():
     try:
         before = (v / "People" / "Sarah.md").read_text()
         before_notes = (v / "Notes.md").read_text()
-        rc, out, err = run("rename", "--vault", str(v),
+        rc, out, err = run("rename", "--vault-path", str(v),
                             "People/Sarah.md", "People/Sarah Chen.md")
         case("returns 0", rc == 0, err)
         data = json.loads(out)
@@ -338,7 +345,7 @@ def test_rename_apply_all_link_forms():
     print("\n[rename] --apply rewrites all 5 link forms")
     v = make_rename_vault()
     try:
-        rc, out, err = run("rename", "--vault", str(v),
+        rc, out, err = run("rename", "--vault-path", str(v),
                             "People/Sarah.md", "People/Sarah Chen.md", "--apply")
         case("returns 0", rc == 0, err)
         case("old file gone", not (v / "People" / "Sarah.md").exists())
@@ -362,7 +369,7 @@ def test_rename_no_h1_update_default():
     print("\n[rename] default does NOT update H1")
     v = make_rename_vault()
     try:
-        rc, out, err = run("rename", "--vault", str(v),
+        rc, out, err = run("rename", "--vault-path", str(v),
                             "People/Sarah.md", "People/Sarah Chen.md", "--apply")
         case("returns 0", rc == 0, err)
         new_text = (v / "People" / "Sarah Chen.md").read_text()
@@ -377,7 +384,7 @@ def test_rename_with_h1_update():
     print("\n[rename] --update-h1 rewrites matching H1")
     v = make_rename_vault()
     try:
-        rc, out, err = run("rename", "--vault", str(v),
+        rc, out, err = run("rename", "--vault-path", str(v),
                             "People/Sarah.md", "People/Sarah Chen.md",
                             "--apply", "--update-h1")
         case("returns 0", rc == 0, err)
@@ -396,7 +403,7 @@ def test_rename_h1_no_match_skipped():
     v = make_vault()
     try:
         (v / "Sarah.md").write_text("# Notes about Sarah\n\nstuff\n")
-        rc, out, err = run("rename", "--vault", str(v),
+        rc, out, err = run("rename", "--vault-path", str(v),
                             "Sarah.md", "Sarah Chen.md",
                             "--apply", "--update-h1")
         case("returns 0", rc == 0, err)
@@ -414,7 +421,7 @@ def test_rename_dest_exists_refuses():
     v = make_rename_vault()
     try:
         (v / "People" / "Sarah Chen.md").write_text("existing\n")
-        rc, _, err = run("rename", "--vault", str(v),
+        rc, _, err = run("rename", "--vault-path", str(v),
                           "People/Sarah.md", "People/Sarah Chen.md", "--apply")
         case("returns nonzero", rc != 0)
         case("error mentions destination exists", "already exists" in err.lower())
@@ -427,7 +434,7 @@ def test_rename_source_missing():
     print("\n[rename] refuses if source doesn't exist")
     v = make_vault()
     try:
-        rc, _, err = run("rename", "--vault", str(v), "missing.md", "new.md")
+        rc, _, err = run("rename", "--vault-path", str(v), "missing.md", "new.md")
         case("returns nonzero", rc != 0)
         case("error mentions source", "does not exist" in err.lower())
     finally:
@@ -442,7 +449,7 @@ def test_rename_path_containment():
         outside = Path(tempfile.mkdtemp(prefix="obs-out-"))
         try:
             rel = os.path.relpath(outside / "evil.md", v)
-            rc, _, err = run("rename", "--vault", str(v), "real.md", rel, "--apply")
+            rc, _, err = run("rename", "--vault-path", str(v), "real.md", rel, "--apply")
             case("refuses path outside vault", rc != 0)
             case("source still in vault", (v / "real.md").exists())
             case("nothing created outside", not (outside / "evil.md").exists())
@@ -450,6 +457,287 @@ def test_rename_path_containment():
             shutil.rmtree(outside)
     finally:
         shutil.rmtree(v)
+
+
+# ----------------------------------------------------------------------- config
+
+
+def test_config_path_uses_env_override():
+    print("\n[config] path respects OBSIDIAN_SKILL_CONFIG env var")
+    tmp = Path(tempfile.mkdtemp(prefix="obs-cfg-"))
+    try:
+        rc, out, err = run("config", "path", env=make_config_env(tmp))
+        case("returns 0", rc == 0, err)
+        case("prints the override path", out.strip() == str(tmp / "config.json"))
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_config_list_empty():
+    print("\n[config] list when no config file exists")
+    tmp = Path(tempfile.mkdtemp(prefix="obs-cfg-"))
+    try:
+        rc, out, err = run("config", "list", env=make_config_env(tmp))
+        case("returns 0", rc == 0, err)
+        data = json.loads(out)
+        case("vaults empty", data["vaults"] == {})
+        case("default null", data["default"] is None)
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_config_add_first_vault_becomes_default():
+    print("\n[config] first added vault is auto-default")
+    tmp = Path(tempfile.mkdtemp(prefix="obs-cfg-"))
+    v = make_vault()
+    try:
+        env = make_config_env(tmp)
+        rc, out, err = run("config", "add", "personal", "--path", str(v), env=env)
+        case("returns 0", rc == 0, err)
+        data = json.loads(out)
+        case("reports added", data["added"] == "personal")
+        case("reports default true", data["default"] is True)
+
+        rc, out, _ = run("config", "list", env=env)
+        listed = json.loads(out)
+        case("default set in config", listed["default"] == "personal")
+        case("vault recorded", "personal" in listed["vaults"])
+        case("path stored absolute", listed["vaults"]["personal"]["path"] == str(v.resolve()))
+    finally:
+        shutil.rmtree(tmp); shutil.rmtree(v)
+
+
+def test_config_add_second_vault_does_not_override_default():
+    print("\n[config] second add does not steal default")
+    tmp = Path(tempfile.mkdtemp(prefix="obs-cfg-"))
+    v1 = make_vault(); v2 = make_vault()
+    try:
+        env = make_config_env(tmp)
+        run("config", "add", "personal", "--path", str(v1), env=env)
+        rc, out, err = run("config", "add", "work", "--path", str(v2), env=env)
+        case("returns 0", rc == 0, err)
+        data = json.loads(out)
+        case("not default", data["default"] is False)
+
+        rc, out, _ = run("config", "list", env=env)
+        listed = json.loads(out)
+        case("default still personal", listed["default"] == "personal")
+        case("both vaults present", set(listed["vaults"]) == {"personal", "work"})
+    finally:
+        shutil.rmtree(tmp); shutil.rmtree(v1); shutil.rmtree(v2)
+
+
+def test_config_add_explicit_default_flag():
+    print("\n[config] --default flag promotes a later add")
+    tmp = Path(tempfile.mkdtemp(prefix="obs-cfg-"))
+    v1 = make_vault(); v2 = make_vault()
+    try:
+        env = make_config_env(tmp)
+        run("config", "add", "personal", "--path", str(v1), env=env)
+        rc, _, err = run("config", "add", "work", "--path", str(v2), "--default", env=env)
+        case("returns 0", rc == 0, err)
+        rc, out, _ = run("config", "list", env=env)
+        case("default switched to work", json.loads(out)["default"] == "work")
+    finally:
+        shutil.rmtree(tmp); shutil.rmtree(v1); shutil.rmtree(v2)
+
+
+def test_config_add_rejects_non_vault():
+    print("\n[config] add refuses paths missing .obsidian/")
+    tmp = Path(tempfile.mkdtemp(prefix="obs-cfg-"))
+    bogus = Path(tempfile.mkdtemp(prefix="obs-bogus-"))
+    try:
+        env = make_config_env(tmp)
+        rc, _, err = run("config", "add", "x", "--path", str(bogus), env=env)
+        case("returns nonzero", rc != 0)
+        case("error mentions .obsidian/", ".obsidian/" in err)
+        case("config file not created",
+             not (tmp / "config.json").exists())
+    finally:
+        shutil.rmtree(tmp); shutil.rmtree(bogus)
+
+
+def test_config_add_rejects_duplicate():
+    print("\n[config] add refuses duplicate name")
+    tmp = Path(tempfile.mkdtemp(prefix="obs-cfg-"))
+    v = make_vault()
+    try:
+        env = make_config_env(tmp)
+        run("config", "add", "personal", "--path", str(v), env=env)
+        rc, _, err = run("config", "add", "personal", "--path", str(v), env=env)
+        case("returns nonzero", rc != 0)
+        case("error mentions already configured", "already configured" in err)
+    finally:
+        shutil.rmtree(tmp); shutil.rmtree(v)
+
+
+def test_config_remove_clears_default_when_default_removed():
+    print("\n[config] removing the default clears default")
+    tmp = Path(tempfile.mkdtemp(prefix="obs-cfg-"))
+    v1 = make_vault(); v2 = make_vault()
+    try:
+        env = make_config_env(tmp)
+        run("config", "add", "personal", "--path", str(v1), env=env)
+        run("config", "add", "work", "--path", str(v2), env=env)
+        rc, out, err = run("config", "remove", "personal", env=env)
+        case("returns 0", rc == 0, err)
+        data = json.loads(out)
+        case("reports default cleared", data["default_cleared"] is True)
+        rc, out, _ = run("config", "list", env=env)
+        case("default null after removal", json.loads(out)["default"] is None)
+    finally:
+        shutil.rmtree(tmp); shutil.rmtree(v1); shutil.rmtree(v2)
+
+
+def test_config_set_default_unknown():
+    print("\n[config] set-default rejects unknown vault")
+    tmp = Path(tempfile.mkdtemp(prefix="obs-cfg-"))
+    try:
+        env = make_config_env(tmp)
+        rc, _, err = run("config", "set-default", "nope", env=env)
+        case("returns nonzero", rc != 0)
+        case("error mentions unknown", "unknown vault" in err)
+    finally:
+        shutil.rmtree(tmp)
+
+
+# --------------------------------------------------------- vault resolution
+
+
+def test_vault_by_name_resolves_via_config():
+    print("\n[resolve] --vault NAME resolves through config")
+    tmp = Path(tempfile.mkdtemp(prefix="obs-cfg-"))
+    v = make_vault()
+    try:
+        env = make_config_env(tmp)
+        run("config", "add", "personal", "--path", str(v), env=env)
+        (v / "note.md").write_text("hello\n")
+        rc, _, err = run(
+            "insert", "--vault", "personal", "--file", "note.md",
+            "--anchor", "end", "--content", "world",
+            env=env,
+        )
+        case("returns 0", rc == 0, err)
+        case("file modified", "world" in (v / "note.md").read_text())
+    finally:
+        shutil.rmtree(tmp); shutil.rmtree(v)
+
+
+def test_vault_default_resolution():
+    print("\n[resolve] no --vault uses default")
+    tmp = Path(tempfile.mkdtemp(prefix="obs-cfg-"))
+    v = make_vault()
+    try:
+        env = make_config_env(tmp)
+        run("config", "add", "personal", "--path", str(v), env=env)
+        (v / "note.md").write_text("hello\n")
+        rc, _, err = run(
+            "insert", "--file", "note.md", "--anchor", "end", "--content", "x",
+            env=env,
+        )
+        case("returns 0 (no --vault, picks default)", rc == 0, err)
+    finally:
+        shutil.rmtree(tmp); shutil.rmtree(v)
+
+
+def test_vault_multiple_no_default_errors():
+    print("\n[resolve] multiple vaults, no default, no --vault: errors helpfully")
+    tmp = Path(tempfile.mkdtemp(prefix="obs-cfg-"))
+    v1 = make_vault(); v2 = make_vault()
+    try:
+        env = make_config_env(tmp)
+        run("config", "add", "personal", "--path", str(v1), env=env)
+        run("config", "add", "work", "--path", str(v2), env=env)
+        run("config", "remove", "personal", env=env)
+        run("config", "add", "personal", "--path", str(v1), env=env)
+        # personal is now default again — clear it
+        # Easier: build state directly.
+        (tmp / "config.json").write_text(json.dumps({
+            "vaults": {
+                "personal": {"path": str(v1)},
+                "work": {"path": str(v2)},
+            },
+        }))
+        (v1 / "n.md").write_text("hi\n")
+        rc, _, err = run(
+            "insert", "--file", "n.md", "--anchor", "end", "--content", "x",
+            env=env,
+        )
+        case("returns nonzero", rc != 0)
+        case("error mentions multiple", "multiple vaults" in err.lower() or "no default" in err.lower())
+        case("error lists both names", "personal" in err and "work" in err)
+    finally:
+        shutil.rmtree(tmp); shutil.rmtree(v1); shutil.rmtree(v2)
+
+
+def test_vault_unknown_name_errors():
+    print("\n[resolve] unknown --vault NAME errors with available list")
+    tmp = Path(tempfile.mkdtemp(prefix="obs-cfg-"))
+    v = make_vault()
+    try:
+        env = make_config_env(tmp)
+        run("config", "add", "personal", "--path", str(v), env=env)
+        (v / "n.md").write_text("hi\n")
+        rc, _, err = run(
+            "insert", "--vault", "ghost", "--file", "n.md",
+            "--anchor", "end", "--content", "x",
+            env=env,
+        )
+        case("returns nonzero", rc != 0)
+        case("error mentions unknown", "unknown vault" in err)
+        case("error lists 'personal' as configured", "personal" in err)
+    finally:
+        shutil.rmtree(tmp); shutil.rmtree(v)
+
+
+def test_read_only_blocks_writes():
+    print("\n[resolve] read_only=true blocks insert and rename")
+    tmp = Path(tempfile.mkdtemp(prefix="obs-cfg-"))
+    v = make_vault()
+    try:
+        env = make_config_env(tmp)
+        run("config", "add", "archive", "--path", str(v), "--read-only", env=env)
+        (v / "n.md").write_text("hi\n")
+
+        rc, _, err = run(
+            "insert", "--vault", "archive", "--file", "n.md",
+            "--anchor", "end", "--content", "x",
+            env=env,
+        )
+        case("insert blocked", rc != 0 and "read-only" in err)
+        case("file not modified", (v / "n.md").read_text() == "hi\n")
+
+        # Rename --apply should also block. Preview (no --apply) is fine.
+        rc, _, _ = run(
+            "rename", "--vault", "archive", "n.md", "renamed.md",
+            env=env,
+        )
+        case("rename preview still allowed", rc == 0)
+
+        rc, _, err = run(
+            "rename", "--vault", "archive", "n.md", "renamed.md", "--apply",
+            env=env,
+        )
+        case("rename apply blocked", rc != 0 and "read-only" in err)
+        case("file not renamed", (v / "n.md").exists())
+    finally:
+        shutil.rmtree(tmp); shutil.rmtree(v)
+
+
+def test_no_config_helpful_error():
+    print("\n[resolve] no config + no --vault-path: helpful error")
+    tmp = Path(tempfile.mkdtemp(prefix="obs-cfg-"))
+    try:
+        env = make_config_env(tmp)
+        # No config.json exists.
+        rc, _, err = run(
+            "insert", "--file", "x.md", "--anchor", "end", "--content", "y",
+            env=env,
+        )
+        case("returns nonzero", rc != 0)
+        case("error tells user how to set up", "config add" in err)
+    finally:
+        shutil.rmtree(tmp)
 
 
 # ----------------------------------------------------------------------- main
@@ -478,6 +766,21 @@ def main() -> int:
         test_rename_dest_exists_refuses,
         test_rename_source_missing,
         test_rename_path_containment,
+        test_config_path_uses_env_override,
+        test_config_list_empty,
+        test_config_add_first_vault_becomes_default,
+        test_config_add_second_vault_does_not_override_default,
+        test_config_add_explicit_default_flag,
+        test_config_add_rejects_non_vault,
+        test_config_add_rejects_duplicate,
+        test_config_remove_clears_default_when_default_removed,
+        test_config_set_default_unknown,
+        test_vault_by_name_resolves_via_config,
+        test_vault_default_resolution,
+        test_vault_multiple_no_default_errors,
+        test_vault_unknown_name_errors,
+        test_read_only_blocks_writes,
+        test_no_config_helpful_error,
     ]
     for t in tests:
         t()

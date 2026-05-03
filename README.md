@@ -54,15 +54,32 @@ the full surface and `scripts/obsidian.py` for the bundled helper script.
 ## Development
 
 ```bash
-make test     # run the 66-case mechanical test suite
+make test     # run the mechanical test suite
 make package  # build the .skill bundle
 make clean    # remove generated artifacts
 ```
 
-Tests cover the bundled script's behavior end-to-end: insert anchors
-(end / after-heading / before-heading), code-fence-aware heading match,
+Tests cover the bundled script end-to-end: insert anchors (end /
+after-heading / before-heading), code-fence-aware heading match,
 frontmatter preservation, link rewriting across all 6 wikilink/markdown
-forms, path containment, the `--update-h1` opt-in, and error paths.
+forms, path containment, the `--update-h1` opt-in, vault-profile
+configuration (`config add` / `list` / `remove` / `set-default`),
+`--vault NAME` resolution and default fallback, the read-only flag, and
+error paths.
+
+## Configuration
+
+Vault profiles are stored in `~/.config/obsidian-skill/config.json`,
+managed via the `config` subcommand:
+
+```bash
+python3 scripts/obsidian.py config add personal --path /Users/you/Documents/Personal
+python3 scripts/obsidian.py config add work     --path /Users/you/Documents/Work --read-only
+python3 scripts/obsidian.py config list
+```
+
+The first profile becomes the default. See SKILL.md for the full
+surface.
 
 ## Future considerations
 
