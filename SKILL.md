@@ -6,186 +6,53 @@ description: |-
 
 # Obsidian
 
-This skill gives agents a safe, generic surface for interacting with the
-user's Obsidian vault. It deliberately stays out of personal organizational
-conventions — folder layout, naming patterns, daily log format, tag
-taxonomy. Those belong in a separate workflow skill. This one knows how to
-find the vault, read and write `.md` files, and avoid destroying notes.
+This skill gives agents a safe, generic surface for interacting with the user's Obsidian vault. It deliberately stays out of personal organizational conventions — folder layout, naming patterns, daily log format, tag taxonomy. Those belong in a separate workflow skill. This one knows how to find the vault, read and write `.md` files, and avoid destroying notes.
 
-**Scope: macOS only in v1.** Linux and Windows have analogous Obsidian
-config paths; extending support to them is straightforward future work but
-not done here.
+**Scope: macOS only in v1.** Linux and Windows have analogous Obsidian config paths; extending support to them is straightforward future work but not done here.
 
-If the user has **Obsidian Sync**, per-file version history is the primary
-recovery backstop. Without Sync, recovery falls to whatever else is
-running (Time Machine, iCloud Drive history, git, Dropbox versions). The
-safety design below does not depend on Sync — it just gets cheaper to
-recover from honest mistakes when Sync is present.
+## Progressive disclosure
+
+This file is the always-loaded core. Load these only when their topic comes up:
+
+- `references/setup.md` — registering a new vault, multi-vault selection, fixing a misregistered vault, the full `config.json` schema.
+- `references/sync-and-recovery.md` — Obsidian Sync awareness, concurrent editing in the Obsidian app, recoverability after a write goes wrong.
+- `references/niche.md` — URI scheme for opening notes in the app, attachments handling, and the documented out-of-scope list.
 
 ---
 
 ## Vault discovery
 
-The user has at least one Obsidian vault. They may have several. Treat
-the vault registry as a list, even when it has one entry — keeps the
-model uniform.
+The user has at least one Obsidian vault. They may have several. Treat the vault registry as a list, even when it has one entry — keeps the model uniform.
 
 ### What to know about a vault
 
-- `name` — short profile name the agent uses to refer to the vault
-  (e.g. `personal`, `work`). Becomes the lookup key in `config.json`.
-- `path` — absolute filesystem path to the vault directory
-- `read_only` — optional; if `true`, the skill blocks all write ops on
-  this vault (see "Read-only mode")
+- `name` — short profile name the agent uses to refer to the vault (e.g. `personal`, `work`). Becomes the lookup key in `config.json`.
+- `path` — absolute filesystem path to the vault directory.
+- `read_only` — optional; if `true`, the skill blocks all write ops on this vault (see "Read-only mode").
 
-The default vault is recorded once at the top level of `config.json`
-(`"default": "<name>"`), not per-profile. See "Configuration" below.
+The default vault is recorded once at the top level of `config.json` (`"default": "<name>"`), not per-profile.
 
-### Deriving the vault name from a path
+### Quick path to a usable vault
 
-On macOS, Obsidian maintains a registry of vaults at:
+1. `python3 scripts/obsidian.py config list` — shows configured vaults.
+2. If none are configured, load `references/setup.md` and follow the first-use flow (it derives a vault path from `~/Library/Application Support/obsidian/obsidian.json` when possible).
+3. Otherwise, select the appropriate profile — the script falls back to the default (or sole) vault when no `--vault` is passed.
 
-```
-~/Library/Application Support/obsidian/obsidian.json
-```
-
-Structure (roughly):
-
-```json
-{
-  "vaults": {
-    "<vault-id>": { "path": "/Users/dan/Documents/MyVault", "ts": ... }
-  }
-}
-```
-
-Obsidian's display name for a vault is the basename of its `path`. The
-URI scheme uses this name. Prefer reading `obsidian.json` over guessing.
-
-If the file doesn't exist or doesn't list a path, fall back to the
-directory's basename and tell the user that's what you did.
-
-### Validating that a path is a vault
-
-Before registering a path, check that it contains a `.obsidian/`
-directory. Obsidian creates that directory on first open of a vault, so
-its absence almost always means a typo, a wrong folder, or a vault
-that's never been opened.
-
-If the path doesn't have `.obsidian/`, surface the issue: "This path
-doesn't look like an Obsidian vault — there's no `.obsidian/` directory
-inside. Did you mean a different folder, or is this a new vault you
-haven't opened yet?"
-
-### First-use flow (no vault registered)
-
-1. Run `python3 scripts/obsidian.py config list` to confirm there are
-   no vaults configured yet.
-2. Read `~/Library/Application Support/obsidian/obsidian.json`. If it
-   lists exactly one vault, propose: "I see one Obsidian vault at
-   `<path>`. Want me to register it as `personal`?" (Suggest a sensible
-   short name; the user can pick another.)
-3. If multiple vaults are listed, show them and ask which to register
-   (offer to add them all).
-4. If the file is missing, ask the user for the vault path and a name.
-5. Persist via `config add` (see "Configuration" below). The script
-   validates `.obsidian/` exists and writes the entry atomically.
-
-### Multi-vault selection within a conversation
-
-- One configured vault → use it implicitly (the script falls back to
-  the sole vault when no `--vault` is given).
-- Multiple configured, one marked default → the script uses the default
-  unless the user names another.
-- Multiple configured, no default → the script errors with the list of
-  available names. Ask the user which to use, and offer to mark one as
-  default with `config set-default`.
-- Once a vault is selected in a conversation, stick with it for the
-  rest of the conversation unless the user redirects.
-
-### Adding or correcting a vault
-
-User cues like "I have another vault," "add my work vault," "the vault
-is actually at X" → update the config. For corrections, `config remove`
-the old entry and `config add` the new one (the script intentionally
-refuses duplicate names so a stale entry never silently shadows the
-correct one). Confirm path and name before running.
-
----
-
-## Configuration
-
-Vault profiles live in a single JSON file:
-
-```
-~/.config/obsidian-skill/config.json
-```
-
-(Override with `OBSIDIAN_SKILL_CONFIG=<path>` for tests; respects
-`XDG_CONFIG_HOME` if set.)
-
-Schema:
-
-```json
-{
-  "default": "personal",
-  "vaults": {
-    "personal": { "path": "/Users/dan/Documents/Personal" },
-    "work":     { "path": "/Users/dan/Documents/Work", "read_only": true }
-  }
-}
-```
-
-Manage it through the bundled script — don't hand-edit unless you have
-to. The script does atomic writes and `.obsidian/` validation.
-
-```
-config path                          # print the config file path
-config list                          # show all profiles + default
-config show NAME                     # show one profile
-config add NAME --path PATH \        # add a profile (validates .obsidian/)
-            [--default] [--read-only]
-config remove NAME                   # remove a profile
-config set-default NAME              # set the top-level default
-```
-
-The first profile added becomes the default automatically. Subsequent
-profiles only become default when `--default` is passed.
-
-**Tell the user where the file lives** the first time you write to it.
-Persistence is invisible by default; the user should know what's on
-disk so they can inspect or edit it.
-
-### Selecting a vault for an operation
-
-Every operation that touches a vault accepts:
-
-- `--vault NAME` — resolve the profile via `config.json`. The normal path.
-- `--vault-path PATH` — direct filesystem path. Escape hatch; bypasses
-  the config and the read-only flag. Use it for tests, one-offs, or
-  scripts that already know the path.
-
-When neither is passed, the script falls back to the configured default,
-or — if exactly one profile is configured — that one.
+For multi-vault selection rules, registering new vaults, and correcting a misregistered one, see `references/setup.md`.
 
 ---
 
 ## Operations
 
-The skill exposes these operations. Several are implemented by a small
-bundled script (`scripts/obsidian.py`) — see "Bundled script" below for
-which ones and why.
+The skill exposes these operations. Several are implemented by a small bundled script (`scripts/obsidian.py`) — see "Bundled script" below for which ones and why.
 
 ### Reading
 
 #### `read <path>`
-Read a note's contents. Path is relative to the vault root, e.g.
-`Daily/2026-05-02.md`.
+Read a note's contents. Path is relative to the vault root, e.g. `Daily/2026-05-02.md`.
 
 #### `list [folder]`
-List `.md` files in the vault, optionally scoped to a subfolder.
-Recursive by default. Always exclude `.obsidian/`, `.trash/`, and
-`.git/`. Don't include attachments by default — see "Attachments."
+List `.md` files in the vault, optionally scoped to a subfolder. Recursive by default. Always exclude `.obsidian/`, `.trash/`, and `.git/`. Don't include attachments by default — see `references/niche.md`.
 
 #### `search <query>`
 Full-text search across the vault.
@@ -205,149 +72,93 @@ grep -r --include='*.md' \
   "<query>" "<vault-path>"
 ```
 
-When `rg` is missing, mention it once per conversation: "Using grep —
-`rg` (ripgrep) would be faster if you want to install it." Don't repeat
-the message after the first search.
+When `rg` is missing, mention it once per conversation: "Using grep — `rg` (ripgrep) would be faster if you want to install it." Don't repeat the message after the first search.
 
 #### `backlinks <note-name>`
-Find every note that links to `<note-name>`. Convenience over `search`
-because Obsidian links come in several forms; the skill knows them all
-and the agent doesn't have to reinvent the regex:
+Find every note that links to `<note-name>`. Convenience over `search` because Obsidian links come in several forms; the skill knows them all and the agent doesn't have to reinvent the regex:
 
 - `[[<name>]]` — basic wikilink
 - `[[<name>|alias]]` — with display alias
 - `[[<name>#heading]]` — heading anchor
 - `[[<name>^block-id]]` — block reference
 - `![[<name>]]` — embed (`!` prefix)
-- `[text](<name>.md)` and `[text](path/<name>.md)` — markdown links
-  (URL-encoded forms too)
+- `[text](<name>.md)` and `[text](path/<name>.md)` — markdown links (URL-encoded forms too)
 
-Match across all of these. Match folder-qualified forms when the name
-includes a path. Bundled script handles this; agents don't need to
-implement the regex themselves.
+Match across all of these. Match folder-qualified forms when the name includes a path. Bundled script handles this; agents don't need to implement the regex themselves.
 
 ### Writing
 
-The write operations are designed around one principle: **never silently
-overwrite existing content.** Sync's per-file version history is a real
-safety net, but it works best for mistakes the user catches quickly.
-Slow drift — a paragraph quietly lost two weeks ago — is what we want
-to make structurally hard.
+The write operations are designed around one principle: **never silently overwrite existing content.** Sync's per-file version history is a real safety net, but it works best for mistakes the user catches quickly. Slow drift — a paragraph quietly lost two weeks ago — is what we want to make structurally hard.
 
-**Path containment.** Before any write, resolve the target path with
-`realpath` and verify it's inside the registered vault directory.
-Refuse writes that resolve outside the vault. This prevents path
-traversal (`../../etc/...`) and catches honest typos.
+**Path containment.** Before any write, resolve the target path with `realpath` and verify it's inside the registered vault directory. Refuse writes that resolve outside the vault. This prevents path traversal (`../../etc/...`) and catches honest typos.
 
-**Frontmatter awareness.** Obsidian notes commonly start with YAML
-frontmatter delimited by `---` lines. Treat frontmatter as structural:
+**Frontmatter awareness.** Obsidian notes commonly start with YAML frontmatter delimited by `---` lines. Treat frontmatter as structural:
 
 - `insert --at end` is fine — it operates at end of file regardless.
-- `insert --at after-heading` and `before-heading` only match headings
-  in the body, not characters that appear inside frontmatter.
-- `replace` should preserve frontmatter unless the agent is explicitly
-  rewriting it. If frontmatter is being modified, surface that.
+- `insert --at after-heading` and `before-heading` only match headings in the body, not characters that appear inside frontmatter.
+- `replace` should preserve frontmatter unless the agent is explicitly rewriting it. If frontmatter is being modified, surface that.
 - `create` may include frontmatter or not, as appropriate.
 
-**Atomic writes.** For `create` and `replace`: write to a temp file in
-the same directory, then `mv` into place. Avoids partial reads if
-Obsidian's filesystem watcher catches the file mid-write.
+**Atomic writes.** For `create` and `replace`: write to a temp file in the same directory, then `mv` into place. Avoids partial reads if Obsidian's filesystem watcher catches the file mid-write.
+
+If the user is actively editing a note in Obsidian, the write may collide. See `references/sync-and-recovery.md` for the "modified externally" semantics and recovery options after a write goes wrong.
 
 #### `create <path> <content>`
-Create a new note. **Errors if the file already exists** — use
-`replace` to overwrite. Creates parent folders if needed.
+Create a new note. **Errors if the file already exists** — use `replace` to overwrite. Creates parent folders if needed.
 
 #### `insert <path> <content> --at <anchor>`
-Add content to an existing note without replacing existing content.
-**Errors if the file doesn't exist** — use `create` instead. Anchors:
+Add content to an existing note without replacing existing content. **Errors if the file doesn't exist** — use `create` instead. Anchors:
 
-- `end` — append to end of file. Add a leading newline if the file
-  doesn't already end with one.
-- `after-heading "Heading text"` — insert immediately after the
-  matching heading line. New content goes before any existing
-  section content (good for reverse-chronological logs).
-- `before-heading "Heading text"` — insert immediately before the
-  matching heading line. Good for appending to the section that
-  precedes the named heading.
+- `end` — append to end of file. Add a leading newline if the file doesn't already end with one.
+- `after-heading "Heading text"` — insert immediately after the matching heading line. New content goes before any existing section content (good for reverse-chronological logs).
+- `before-heading "Heading text"` — insert immediately before the matching heading line. Good for appending to the section that precedes the named heading.
 
 **Heading match rules:**
 - Match exact heading text after the leading `#`s and a single space.
 - Match any heading level (`#` through `######`).
 - Heading line must start at column 0 — no leading whitespace.
-- Skip lines inside fenced code blocks (` ``` ` or `~~~`) — they look
-  like headings but aren't.
-- Match the raw text. `## **Bold**` matches the literal string
-  `**Bold**`, not `Bold`.
+- Skip lines inside fenced code blocks (` ``` ` or `~~~`) — they look like headings but aren't.
+- Match the raw text. `## **Bold**` matches the literal string `**Bold**`, not `Bold`.
 - If multiple headings match, ask the user which.
 - If none match, error rather than guessing.
 
 The bundled script handles the parsing.
 
 #### `replace <path> <new-content>`
-Replace the entire contents of an existing file. **The agent must
-clearly surface the change in the conversation** — at minimum a
-summary of what's changing and why; ideally a diff for non-trivial
-edits. The user reading the conversation is the backstop against
-silent drift.
+Replace the entire contents of an existing file. **The agent must clearly surface the change in the conversation** — at minimum a summary of what's changing and why; ideally a diff for non-trivial edits. The user reading the conversation is the backstop against silent drift.
 
-For partial edits (one paragraph, a typo), prefer the harness's
-structural edit tools (e.g. exact-string `Edit`) over reading the
-whole file and writing it back — they're inherently more visible
-about what's changing.
+For partial edits (one paragraph, a typo), prefer the harness's structural edit tools (e.g. exact-string `Edit`) over reading the whole file and writing it back — they're inherently more visible about what's changing.
 
 #### `rename <old-path> <new-path>`
-Rename a note and update all inbound links across the vault. This is
-non-trivial because Obsidian links come in several forms (see
-`backlinks`); the bundled script handles them all.
+Rename a note and update all inbound links across the vault. This is non-trivial because Obsidian links come in several forms (see `backlinks`); the bundled script handles them all.
 
 Flow:
 1. Resolve all references to `<old-path>` in every other note.
-2. Show the user a preview: "Renaming will touch N references across
-   M files. Show list?" — on confirmation, proceed.
+2. Show the user a preview: "Renaming will touch N references across M files. Show list?" — on confirmation, proceed.
 3. Rename the file via `mv`, then rewrite all references in one pass.
-4. Surface any references the script couldn't confidently update
-   (e.g. ambiguous case-folding) so the user can fix them by hand.
+4. Surface any references the script couldn't confidently update (e.g. ambiguous case-folding) so the user can fix them by hand.
 
-If the user says "actually let me rename it in Obsidian instead,"
-respect that — Obsidian's in-app rename also handles links.
+If the user says "actually let me rename it in Obsidian instead," respect that — Obsidian's in-app rename also handles links.
 
-**Updating the in-body H1.** By default `rename` only touches link
-references — the file's own `# Heading` is left alone. This is the
-conservative contract. But a common case is renaming a note where the
-file IS its title (e.g. `People/Sarah.md` whose first line is `# Sarah`):
-after rename, the file is "Sarah Chen.md" but greets you with "# Sarah".
+**Updating the in-body H1.** By default `rename` only touches link references — the file's own `# Heading` is left alone. This is the conservative contract. But a common case is renaming a note where the file IS its title (e.g. `People/Sarah.md` whose first line is `# Sarah`): after rename, the file is "Sarah Chen.md" but greets you with "# Sarah".
 
-If the renamed file's first body H1 exactly matches the old basename,
-offer the user the `--update-h1` flag, which rewrites that H1 to the new
-basename. Use it when the H1 looks like the file's own title; skip it
-when the H1 is something like `# Notes about Sarah` (where the rename
-isn't really about the H1 subject).
+If the renamed file's first body H1 exactly matches the old basename, offer the user the `--update-h1` flag, which rewrites that H1 to the new basename. Use it when the H1 looks like the file's own title; skip it when the H1 is something like `# Notes about Sarah` (where the rename isn't really about the H1 subject).
 
 #### `delete <path>`
-**Soft-delete by default.** Move the file to the vault's `.trash/`
-folder (create if missing). Obsidian recognizes `.trash/` and surfaces
-it in the trash view.
+**Soft-delete by default.** Move the file to the vault's `.trash/` folder (create if missing). Obsidian recognizes `.trash/` and surfaces it in the trash view.
 
-Only do a hard `rm` if the user explicitly asks ("permanently
-delete," "hard delete," "rm it"). Surface what you're doing either
-way.
+Only do a hard `rm` if the user explicitly asks ("permanently delete," "hard delete," "rm it"). Surface what you're doing either way.
 
-If a file with the same name already exists in `.trash/`, append a
-timestamp (e.g. `Note (2026-05-02-1430).md`) to disambiguate rather
-than overwriting.
+If a file with the same name already exists in `.trash/`, append a timestamp (e.g. `Note (2026-05-02-1430).md`) to disambiguate rather than overwriting.
 
 #### `trash-list`
-List the contents of `.trash/` with mtime and size. Useful for "what
-have I thrown away recently."
+List the contents of `.trash/` with mtime and size. Useful for "what have I thrown away recently."
 
 #### `trash-empty [--older-than <duration>]`
 Permanently remove items from `.trash/`.
 
-- Without `--older-than`: deletes everything in `.trash/`. **Confirm
-  before doing it** — show a count and total size first.
-- With `--older-than`: deletes only items older than the specified
-  duration (e.g. `30d`, `6m`). Confirmation optional but still
-  recommended for large amounts.
+- Without `--older-than`: deletes everything in `.trash/`. **Confirm before doing it** — show a count and total size first.
+- With `--older-than`: deletes only items older than the specified duration (e.g. `30d`, `6m`). Confirmation optional but still recommended for large amounts.
 
 ---
 
@@ -355,19 +166,10 @@ Permanently remove items from `.trash/`.
 
 Two ways to enter read-only mode; either one blocks all write ops.
 
-- **Vault-level**: the profile in `config.json` has `"read_only": true`.
-  The bundled script enforces this on `insert` and `rename --apply` —
-  even if the agent ignores the flag, the script will refuse the write.
-  Useful for archive vaults the user never wants mutated. (Note:
-  `--vault-path` bypasses the config, so it also bypasses this flag —
-  it's an escape hatch, not a sandbox.)
-- **Conversation-level**: user says "read-only please," "don't write
-  to my vault," etc. Hold for the rest of the conversation unless
-  the user lifts it.
+- **Vault-level**: the profile in `config.json` has `"read_only": true`. The bundled script enforces this on `insert` and `rename --apply` — even if the agent ignores the flag, the script will refuse the write. Useful for archive vaults the user never wants mutated. (Note: `--vault-path` bypasses the config, so it also bypasses this flag — it's an escape hatch, not a sandbox.)
+- **Conversation-level**: user says "read-only please," "don't write to my vault," etc. Hold for the rest of the conversation unless the user lifts it.
 
-When a write op is blocked, surface clearly: "I can't do that — vault
-is in read-only mode. Switch out of read-only mode if you want to
-proceed."
+When a write op is blocked, surface clearly: "I can't do that — vault is in read-only mode. Switch out of read-only mode if you want to proceed."
 
 ---
 
@@ -376,121 +178,16 @@ proceed."
 Several operations are implemented by `scripts/obsidian.py`:
 
 - `rename` — link-aware rename across all note formats
-- `insert --at after-heading` / `before-heading` — markdown structure
-  parsing (code-fence aware, frontmatter aware)
+- `insert --at after-heading` / `before-heading` — markdown structure parsing (code-fence aware, frontmatter aware)
 - `backlinks` — multi-form link search
-- `config` — vault-profile management (see "Configuration")
+- `config` — vault-profile management (see `references/setup.md`)
 
-The other operations (`read`, `list`, `search`, `create`, `replace`,
-`delete`, `trash-list`, `trash-empty`) are simple enough that the
-agent can do them inline with standard tools (Read, Write, Edit,
-`mv`, `find`, `grep`/`rg`). Even so, the agent still needs to know
-*which* vault — read `config.json` first (or run `config list`) to
-resolve the path before touching files inline.
+The other operations (`read`, `list`, `search`, `create`, `replace`, `delete`, `trash-list`, `trash-empty`) are simple enough that the agent can do them inline with standard tools (Read, Write, Edit, `mv`, `find`, `grep`/`rg`). Even so, the agent still needs to know *which* vault — read `config.json` first (or run `config list`) to resolve the path before touching files inline.
 
-**Dependency:** Python 3.8+, stdlib only. macOS ships a recent enough
-`/usr/bin/python3` by default. No third-party packages, no `pip
-install`, no `uv` — clone and run.
+**Dependency:** Python 3.8+, stdlib only. macOS ships a recent enough `/usr/bin/python3` by default. No third-party packages, no `pip install`, no `uv` — clone and run.
 
 The script is invoked as:
 
 ```bash
 python3 <skill-path>/scripts/obsidian.py <command> [args...]
 ```
-
----
-
-## Sync awareness
-
-If Obsidian Sync is enabled, it watches the vault filesystem and
-propagates changes outward. The skill writes directly to disk —
-there's no Obsidian API we're bypassing. Practices:
-
-- **Atomic writes** for `create` and `replace` (described above).
-- **Avoid rapid repeated writes** to the same file — gives Sync more
-  chances to race. Batch updates locally, then write once.
-- **Don't write inside `.obsidian/`** unless the user explicitly asks.
-  That's where Sync conflicts get ugly.
-- **Sync conflict files** (`Note (conflict 2026-05-02 1430).md`) may
-  appear in the vault. Don't surface them as normal notes; if you see
-  one, mention it to the user.
-
-### Concurrent editing in the Obsidian app
-
-If the user is actively editing a note in Obsidian and the skill writes
-to it, Obsidian shows a "modified externally" prompt and there's a
-real chance of data loss depending on which side the user picks.
-Heuristic: if the user has just mentioned editing something or you
-have reason to believe Obsidian is open on that file, ask before
-writing to it.
-
----
-
-## Recoverability
-
-Two failure modes to keep in mind:
-
-1. **Fast-detected mistakes** ("undo what you just did"): if Sync is
-   present, point the user at **File → View file history** in
-   Obsidian (or right-click → Show version history). Without Sync,
-   point at whatever else they have running (Time Machine, git, etc.).
-2. **Slow-detected mistakes** (a paragraph quietly overwritten,
-   noticed weeks later): version history retention is finite. The
-   skill's design — no silent overwrites, mandatory visibility on
-   `replace`, soft-delete by default — is meant to prevent this
-   class of error in the first place. Conversation history is the
-   audit trail.
-
----
-
-## URI scheme (opening notes in the Obsidian app)
-
-When the user wants to "open this in Obsidian":
-
-```
-obsidian://open?vault=<vault-name>&file=<note-path-without-extension>
-```
-
-URL-encode the vault name and file path.
-
-```bash
-open "obsidian://open?vault=MyVault&file=Daily%2F2026-05-02"
-```
-
-If the URI doesn't open the right note, the registered vault name may
-not match what Obsidian expects — re-derive from `obsidian.json`.
-
-**Note:** depending on the user's Obsidian settings, this URI may
-*create* the note if it doesn't exist. If you want to be sure you're
-opening an existing note, check that it exists first.
-
----
-
-## Attachments and non-markdown files
-
-Obsidian vaults often contain images, PDFs, audio, `.canvas` JSON
-files, Excalidraw drawings, and other non-markdown content. The skill
-operates on `.md` files. When the user asks about attachments
-explicitly, be conservative: don't move, rename, or delete them
-without confirmation, since they may be referenced from notes via
-embed syntax (`![[image.png]]`).
-
----
-
-## Out of scope
-
-This skill stays at the surface layer. The following belong in a
-separate personal-workflow skill (or are user-specific decisions):
-
-- Folder layout inside the vault (`Daily/`, `Reference/`, etc.)
-- Daily log format, location, or append patterns
-- Meeting transcript naming conventions
-- Tag taxonomies
-- Templating (Templater, core Templates plugin)
-- Linking conventions ([[wikilinks]] vs markdown links)
-- Routing decisions ("does this go in Obsidian or somewhere else")
-- Cross-tool patterns (e.g. pulling from OmniFocus completed tasks
-  plus daily log for a "what did I do today" review)
-
-If a personal-workflow skill is loaded alongside this one, defer to
-it for those decisions. If not, ask the user rather than guessing.
